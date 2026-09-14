@@ -1,0 +1,72 @@
+name: Build Water Sort Jungle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find and extract game ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Game ZIP not found"
+            exit 1
+          fi
+
+          mkdir extracted
+          unzip -q "$ZIP_FILE" -d extracted
+
+          echo "Project files:"
+          find extracted -maxdepth 5 -type f | head -100
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          sdkmanager "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build APK and AAB
+        working-directory: extracted/android-wrapper
+        run: |
+          gradle assembleDebug --no-daemon
+          gradle bundleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Sort-Jungle-APK
+          path: extracted/android-wrapper/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Sort-Jungle-AAB
+          path: extracted/android-wrapper/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
