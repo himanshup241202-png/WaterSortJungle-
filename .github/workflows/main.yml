@@ -1,9 +1,10 @@
-name: Build Water Sort Jungle - Signed Release
+name: Build Water Sort Jungle - Signed Release APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -17,65 +18,54 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Find Game ZIP
-        run: |
-          set -e
-
-          ZIP_FILE=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: HTML Game ZIP not found"
-            exit 1
-          fi
-
-          echo "Found game ZIP: $ZIP_FILE"
-
-          mkdir -p extracted
-          unzip -q "$ZIP_FILE" -d extracted
-
-          echo "Game files:"
-          find extracted -type f | head -100
-
-      - name: Find HTML file
-        run: |
-          set -e
-
-          HTML_FILE=$(find extracted -type f -iname "index.html" | head -n 1)
-
-          if [ -z "$HTML_FILE" ]; then
-            echo "ERROR: index.html not found inside ZIP"
-            exit 1
-          fi
-
-          echo "HTML found: $HTML_FILE"
-
-          mkdir -p android-wrapper/app/src/main/assets
-          cp "$HTML_FILE" android-wrapper/app/src/main/assets/index.html
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
-        run: |
-          sdkmanager "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Create Android Project
+      - name: Prepare Android SDK
+        shell: bash
         run: |
           set -e
 
-          mkdir -p android-wrapper/app/src/main/java/com/watersort/jungle
-          mkdir -p android-wrapper/app/src/main/res/drawable
-          mkdir -p android-wrapper/app/src/main/res/mipmap-hdpi
+          echo "=========================================="
+          echo "ANDROID SDK"
+          echo "=========================================="
+
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager | sort | tail -n 1)
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Create Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "CREATING ANDROID PROJECT"
+          echo "=========================================="
+
+          rm -rf android-wrapper
+
+          mkdir -p android-wrapper/app/src/main/java/com/watersortjungle/app
+          mkdir -p android-wrapper/app/src/main/assets
           mkdir -p android-wrapper/app/src/main/res/values
-          mkdir -p android-wrapper/app/src/main/res/values-v31
+          mkdir -p android-wrapper/app/src/main/res/drawable
 
           cat > android-wrapper/settings.gradle <<'EOF'
           pluginManagement {
@@ -88,6 +78,7 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+
               repositories {
                   google()
                   mavenCentral()
@@ -115,140 +106,49 @@ jobs:
           }
 
           android {
-              namespace 'com.watersort.jungle'
+              namespace 'com.watersortjungle.app'
+
               compileSdk 35
 
               defaultConfig {
-                  applicationId 'com.watersort.jungle'
+                  applicationId 'com.watersortjungle.app'
                   minSdk 23
                   targetSdk 35
                   versionCode 1
-                  versionName '1.0'
+                  versionName "1.0"
               }
-          }
-          EOF
 
-      - name: Create MainActivity
-        run: |
-          cat > android-wrapper/app/src/main/java/com/watersort/jungle/MainActivity.java <<'EOF'
-          package com.watersort.jungle;
-
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.graphics.Color;
-          import android.view.View;
-          import android.view.Window;
-          import android.view.WindowInsets;
-          import android.view.WindowInsetsController;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-
-          public class MainActivity extends Activity {
-
-              private WebView webView;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  Window window = getWindow();
-
-                  // Keep status bar visible.
-                  window.setStatusBarColor(Color.rgb(26, 90, 46));
-
-                  // Keep navigation bar visible.
-                  window.setNavigationBarColor(Color.BLACK);
-
-                  if (android.os.Build.VERSION.SDK_INT >= 30) {
-                      window.setDecorFitsSystemWindows(false);
-
-                      WindowInsetsController controller =
-                              window.getInsetsController();
-
-                      if (controller != null) {
-                          controller.setSystemBarsBehavior(
-                                  WindowInsetsController.BEHAVIOR_DEFAULT
-                          );
-                          controller.show(WindowInsets.Type.statusBars());
-                          controller.show(WindowInsets.Type.navigationBars());
-                      }
+              signingConfigs {
+                  release {
+                      storeFile file("../../release-key.jks")
+                      storePassword "WaterSortJungleStore2026"
+                      keyAlias "watersort"
+                      keyPassword "WaterSortJungleStore2026"
                   }
-
-                  webView = new WebView(this);
-
-                  webView.setBackgroundColor(Color.WHITE);
-
-                  WebSettings settings = webView.getSettings();
-
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
-                  settings.setDatabaseEnabled(true);
-
-                  // Prevent zoom / automatic scaling.
-                  settings.setSupportZoom(false);
-                  settings.setBuiltInZoomControls(false);
-                  settings.setDisplayZoomControls(false);
-                  settings.setLoadWithOverviewMode(false);
-                  settings.setUseWideViewPort(false);
-                  settings.setTextZoom(100);
-                  settings.setDefaultTextEncodingName("UTF-8");
-
-                  webView.setWebViewClient(new WebViewClient());
-
-                  // Do not allow the game to move into the status bar
-                  // or underneath the navigation bar.
-                  webView.setOnApplyWindowInsetsListener((v, insets) -> {
-
-                      int top = 0;
-                      int bottom = 0;
-
-                      if (android.os.Build.VERSION.SDK_INT >= 30) {
-                          android.graphics.Insets system =
-                                  insets.getInsets(
-                                          WindowInsets.Type.statusBars()
-                                                  | WindowInsets.Type.navigationBars()
-                                  );
-
-                          top = system.top;
-                          bottom = system.bottom;
-                      }
-
-                      v.setPadding(0, top, 0, bottom);
-
-                      return insets;
-                  });
-
-                  setContentView(webView);
-
-                  webView.loadUrl("file:///android_asset/index.html");
               }
 
-              @Override
-              public void onBackPressed() {
-                  if (webView != null && webView.canGoBack()) {
-                      webView.goBack();
-                  } else {
-                      super.onBackPressed();
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      shrinkResources false
+                      signingConfig signingConfigs.release
                   }
               }
           }
           EOF
 
-      - name: Create Manifest
-        run: |
           cat > android-wrapper/app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
               <uses-permission android:name="android.permission.INTERNET" />
 
               <application
                   android:allowBackup="true"
-                  android:label="Water Sort Jungle"
+                  android:usesCleartextTraffic="true"
                   android:theme="@style/AppTheme"
-                  android:resizeableActivity="false"
-                  android:supportsRtl="true">
+                  android:label="Water Sort Jungle"
+                  android:icon="@drawable/app_icon"
+                  android:roundIcon="@drawable/app_icon">
 
                   <activity
                       android:name=".MainActivity"
@@ -267,43 +167,14 @@ jobs:
           </manifest>
           EOF
 
-      - name: Create App Icon
-        run: |
-          ICON=""
-
-          for FILE in \
-            "./Water-Sort-Jungle-App-Icon.png" \
-            "./app-icon.png" \
-            "./icon-1024.png" \
-            "./1000118070.png"
-          do
-            if [ -f "$FILE" ]; then
-              ICON="$FILE"
-              break
-            fi
-          done
-
-          if [ -n "$ICON" ]; then
-            echo "Using icon: $ICON"
-            cp "$ICON" android-wrapper/app/src/main/res/drawable/app_icon.png
-
-            sed -i \
-              's#android:theme="@style/AppTheme"#android:theme="@style/AppTheme" android:icon="@drawable/app_icon"#' \
-              android-wrapper/app/src/main/AndroidManifest.xml
-          else
-            echo "No custom icon found. Using default Android icon."
-          fi
-
-      - name: Create Styles
-        run: |
           cat > android-wrapper/app/src/main/res/values/styles.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
           <resources>
 
               <style name="AppTheme"
-                     parent="@android:style/Theme.Material.Light.NoActionBar">
+                  parent="android:style/Theme.Material.Light.NoActionBar">
 
                   <item name="android:fontFamily">sans</item>
+
                   <item name="android:windowFullscreen">false</item>
 
                   <item name="android:statusBarColor">#1A5A2E</item>
@@ -312,8 +183,6 @@ jobs:
                   <item name="android:windowLightStatusBar">false</item>
                   <item name="android:windowLightNavigationBar">false</item>
 
-                  <item name="android:windowActionModeOverlay">true</item>
-
                   <item name="android:windowNoTitle">true</item>
 
               </style>
@@ -321,52 +190,351 @@ jobs:
           </resources>
           EOF
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
+          cat > android-wrapper/app/src/main/java/com/watersortjungle/app/MainActivity.java <<'EOF'
+          package com.watersortjungle.app;
 
-      - name: Generate Release Keystore
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import android.widget.FrameLayout;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  Window window = getWindow();
+
+                  // Keep status bar visible.
+                  window.setStatusBarColor(Color.rgb(26, 90, 46));
+
+                  // Keep navigation bar visible.
+                  window.setNavigationBarColor(Color.BLACK);
+
+                  /*
+                   * Android 15+ uses edge-to-edge.
+                   * We add the system-bar insets to the WebView so
+                   * the game cannot move behind the status bar or
+                   * navigation bar.
+                   */
+                  if (android.os.Build.VERSION.SDK_INT >= 30) {
+
+                      window.setDecorFitsSystemWindows(false);
+
+                      WindowInsetsController controller =
+                              window.getInsetsController();
+
+                      if (controller != null) {
+                          controller.show(WindowInsets.Type.statusBars());
+                          controller.show(WindowInsets.Type.navigationBars());
+                          controller.setSystemBarsBehavior(
+                              WindowInsetsController.BEHAVIOR_DEFAULT
+                          );
+                      }
+                  }
+
+                  FrameLayout root = new FrameLayout(this);
+
+                  root.setBackgroundColor(Color.WHITE);
+
+                  webView = new WebView(this);
+
+                  webView.setBackgroundColor(Color.WHITE);
+
+                  /*
+                   * IMPORTANT:
+                   * Disable WebView zoom and automatic scaling.
+                   */
+                  WebSettings settings = webView.getSettings();
+
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+                  settings.setAllowFileAccessFromFileURLs(true);
+                  settings.setAllowUniversalAccessFromFileURLs(true);
+
+                  settings.setSupportZoom(false);
+                  settings.setBuiltInZoomControls(false);
+                  settings.setDisplayZoomControls(false);
+
+                  settings.setLoadWithOverviewMode(false);
+                  settings.setUseWideViewPort(false);
+
+                  settings.setTextZoom(100);
+
+                  settings.setDefaultTextEncodingName("UTF-8");
+
+                  webView.setWebViewClient(new WebViewClient());
+
+                  /*
+                   * Keep the complete game below the status bar
+                   * and above the navigation bar.
+                   */
+                  webView.setOnApplyWindowInsetsListener(
+                      (view, insets) -> {
+
+                          int top = 0;
+                          int bottom = 0;
+
+                          if (android.os.Build.VERSION.SDK_INT >= 30) {
+
+                              android.graphics.Insets systemInsets =
+                                  insets.getInsets(
+                                      WindowInsets.Type.statusBars()
+                                      | WindowInsets.Type.navigationBars()
+                                  );
+
+                              top = systemInsets.top;
+                              bottom = systemInsets.bottom;
+                          }
+
+                          view.setPadding(
+                              0,
+                              top,
+                              0,
+                              bottom
+                          );
+
+                          return insets;
+                      }
+                  );
+
+                  root.addView(
+                      webView,
+                      new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT,
+                          FrameLayout.LayoutParams.MATCH_PARENT
+                      )
+                  );
+
+                  setContentView(root);
+
+                  webView.loadUrl(
+                      "file:///android_asset/index.html"
+                  );
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+          }
+          EOF
+
+      - name: Find HTML ZIP
+        shell: bash
         run: |
+          set -e
+
+          echo "=========================================="
+          echo "SEARCHING FOR HTML ZIP"
+          echo "=========================================="
+
+          ZIP_FILE=$(find . -maxdepth 3 -type f \
+            \( -iname "*.zip" -o -iname "*.ZIP" \) \
+            ! -path "./android-wrapper/*" \
+            | head -n 1 || true)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: HTML ZIP was not found."
+            exit 1
+          fi
+
+          echo "ZIP FOUND:"
+          echo "$ZIP_FILE"
+
+          rm -rf website-files
+
+          mkdir -p website-files
+
+          unzip -o "$ZIP_FILE" -d website-files
+
+      - name: Find and install app icon
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "SEARCHING FOR APP ICON"
+          echo "=========================================="
+
+          ICON_FILE=""
+
+          for FILE in \
+            "./Water-Sort-Jungle-App-Icon.png" \
+            "./app-icon.png" \
+            "./icon-1024.png" \
+            "./1000118070.png"
+          do
+            if [ -f "$FILE" ]; then
+              ICON_FILE="$FILE"
+              break
+            fi
+          done
+
+          if [ -z "$ICON_FILE" ]; then
+            ICON_FILE=$(find website-files -type f \
+              \( -iname "*.png" -o -iname "*.PNG" \) \
+              | head -n 1 || true)
+          fi
+
+          if [ -z "$ICON_FILE" ]; then
+            echo "ERROR: App icon PNG was not found."
+            echo "Upload your Water Sort Jungle icon PNG to the repository."
+            exit 1
+          fi
+
+          echo "ICON FOUND:"
+          echo "$ICON_FILE"
+
+          cp "$ICON_FILE" \
+            android-wrapper/app/src/main/res/drawable/app_icon.png
+
+          echo "ICON INSTALLED SUCCESSFULLY."
+
+      - name: Copy HTML game into APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "PUTTING GAME INSIDE APK"
+          echo "=========================================="
+
+          INDEX_FILE=$(find website-files \
+            -type f \
+            -iname "index.html" \
+            | head -n 1 || true)
+
+          if [ -z "$INDEX_FILE" ]; then
+              echo "ERROR: index.html not found inside ZIP."
+              exit 1
+          fi
+
+          WEBSITE_ROOT=$(dirname "$INDEX_FILE")
+
+          echo "GAME ROOT:"
+          echo "$WEBSITE_ROOT"
+
+          cp -R "$WEBSITE_ROOT"/. \
+            android-wrapper/app/src/main/assets/
+
+          if [ ! -f android-wrapper/app/src/main/assets/index.html ]; then
+              echo "ERROR: index.html was not copied."
+              exit 1
+          fi
+
+          echo ""
+          echo "GAME FILES INSIDE APK:"
+          find android-wrapper/app/src/main/assets \
+            -type f | sort
+
+      - name: Create release signing key
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "CREATING RELEASE KEY"
+          echo "=========================================="
+
           keytool -genkeypair \
             -v \
-            -keystore water-sort-jungle-release.jks \
-            -alias water_sort_jungle \
+            -keystore release-key.jks \
+            -alias watersort \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
             -storepass WaterSortJungleStore2026 \
             -keypass WaterSortJungleStore2026 \
-            -dname "CN=Water Sort Jungle, OU=Game, O=Water Sort Jungle, L=India, ST=Uttar Pradesh, C=IN"
+            -dname "CN=Water Sort Jungle, OU=Mobile, O=Water Sort Jungle, L=India, ST=India, C=IN"
 
-      - name: Build Signed Release APK
-        working-directory: android-wrapper
+          cp release-key.jks android-wrapper/release-key.jks
+
+      - name: Install Gradle
+        shell: bash
         run: |
-          gradle assembleRelease \
-            --no-daemon \
-            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/water-sort-jungle-release.jks" \
-            -Pandroid.injected.signing.store.password="WaterSortJungleStore2026" \
-            -Pandroid.injected.signing.key.alias="water_sort_jungle" \
-            -Pandroid.injected.signing.key.password="WaterSortJungleStore2026"
+          set -e
 
-      - name: Verify APK Signature
+          cd android-wrapper
+
+          gradle wrapper --gradle-version 8.7
+
+      - name: Build Release APK
+        shell: bash
         run: |
-          APK=$(find android-wrapper/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          set -e
 
-          if [ -z "$APK" ]; then
-            echo "ERROR: Release APK not found"
-            exit 1
-          fi
+          echo "=========================================="
+          echo "BUILDING SIGNED RELEASE APK"
+          echo "=========================================="
 
-          echo "APK: $APK"
+          cd android-wrapper
 
-          $ANDROID_HOME/build-tools/35.0.0/apksigner verify --verbose "$APK"
+          chmod +x gradlew
 
-          echo "SIGNED APK VERIFIED SUCCESSFULLY"
+          ./gradlew clean assembleRelease --no-daemon
 
-      - name: Upload Signed Release APK
+      - name: Copy final APK
+        shell: bash
+        run: |
+          set -e
+
+          cp \
+            android-wrapper/app/build/outputs/apk/release/app-release.apk \
+            Water-Sort-Jungle-Release-Signed.apk
+
+          echo ""
+          echo "=========================================="
+          echo "FINAL APK"
+          echo "=========================================="
+
+          ls -lh Water-Sort-Jungle-Release-Signed.apk
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -e
+
+          echo "=========================================="
+          echo "VERIFYING SIGNATURE"
+          echo "=========================================="
+
+          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner \
+            verify \
+            --verbose \
+            Water-Sort-Jungle-Release-Signed.apk
+
+          echo "SIGNATURE VERIFIED SUCCESSFULLY."
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Water-Sort-Jungle-Signed-Release-APK
-          path: android-wrapper/app/build/outputs/apk/release/*.apk
+          name: Water-Sort-Jungle-Release-Signed-APK
+          path: Water-Sort-Jungle-Release-Signed.apk
+          if-no-files-found: error
+
+      - name: Upload signing key backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: Water-Sort-Jungle-Signing-Key
+          path: release-key.jks
           if-no-files-found: error
