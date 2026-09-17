@@ -29,20 +29,13 @@ jobs:
         run: |
           set -e
 
-          echo "=========================================="
-          echo "ANDROID SDK"
-          echo "=========================================="
-
           export ANDROID_HOME=/usr/local/lib/android/sdk
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-
-          echo "ANDROID_HOME=$ANDROID_HOME"
 
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -type f -name sdkmanager | sort | tail -n 1)
 
-          echo "Using sdkmanager:"
-          echo "$SDKMANAGER"
+          echo "Using sdkmanager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
@@ -55,10 +48,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "CREATING ANDROID PROJECT"
-          echo "=========================================="
 
           rm -rf android-wrapper
 
@@ -196,14 +185,10 @@ jobs:
           import android.app.Activity;
           import android.os.Bundle;
           import android.graphics.Color;
-          import android.view.View;
           import android.view.Window;
-          import android.view.WindowInsets;
-          import android.view.WindowInsetsController;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          import android.widget.FrameLayout;
 
           public class MainActivity extends Activity {
 
@@ -215,46 +200,18 @@ jobs:
 
                   Window window = getWindow();
 
-                  // Keep status bar visible.
-                  window.setStatusBarColor(Color.rgb(26, 90, 46));
+                  // Keep status bar visible
+                  window.setStatusBarColor(
+                      Color.rgb(26, 90, 46)
+                  );
 
-                  // Keep navigation bar visible.
+                  // Keep navigation bar visible
                   window.setNavigationBarColor(Color.BLACK);
-
-                  /*
-                   * Android 15+ uses edge-to-edge.
-                   * We add the system-bar insets to the WebView so
-                   * the game cannot move behind the status bar or
-                   * navigation bar.
-                   */
-                  if (android.os.Build.VERSION.SDK_INT >= 30) {
-
-                      window.setDecorFitsSystemWindows(false);
-
-                      WindowInsetsController controller =
-                              window.getInsetsController();
-
-                      if (controller != null) {
-                          controller.show(WindowInsets.Type.statusBars());
-                          controller.show(WindowInsets.Type.navigationBars());
-                          controller.setSystemBarsBehavior(
-                              WindowInsetsController.BEHAVIOR_DEFAULT
-                          );
-                      }
-                  }
-
-                  FrameLayout root = new FrameLayout(this);
-
-                  root.setBackgroundColor(Color.WHITE);
 
                   webView = new WebView(this);
 
                   webView.setBackgroundColor(Color.WHITE);
 
-                  /*
-                   * IMPORTANT:
-                   * Disable WebView zoom and automatic scaling.
-                   */
                   WebSettings settings = webView.getSettings();
 
                   settings.setJavaScriptEnabled(true);
@@ -266,61 +223,30 @@ jobs:
                   settings.setAllowFileAccessFromFileURLs(true);
                   settings.setAllowUniversalAccessFromFileURLs(true);
 
+                  /*
+                   * IMPORTANT:
+                   * Do not allow WebView to zoom the game.
+                   */
                   settings.setSupportZoom(false);
                   settings.setBuiltInZoomControls(false);
                   settings.setDisplayZoomControls(false);
 
+                  /*
+                   * Do not shrink the HTML game.
+                   */
                   settings.setLoadWithOverviewMode(false);
                   settings.setUseWideViewPort(false);
 
+                  /*
+                   * Keep normal HTML text size.
+                   */
                   settings.setTextZoom(100);
 
                   settings.setDefaultTextEncodingName("UTF-8");
 
                   webView.setWebViewClient(new WebViewClient());
 
-                  /*
-                   * Keep the complete game below the status bar
-                   * and above the navigation bar.
-                   */
-                  webView.setOnApplyWindowInsetsListener(
-                      (view, insets) -> {
-
-                          int top = 0;
-                          int bottom = 0;
-
-                          if (android.os.Build.VERSION.SDK_INT >= 30) {
-
-                              android.graphics.Insets systemInsets =
-                                  insets.getInsets(
-                                      WindowInsets.Type.statusBars()
-                                      | WindowInsets.Type.navigationBars()
-                                  );
-
-                              top = systemInsets.top;
-                              bottom = systemInsets.bottom;
-                          }
-
-                          view.setPadding(
-                              0,
-                              top,
-                              0,
-                              bottom
-                          );
-
-                          return insets;
-                      }
-                  );
-
-                  root.addView(
-                      webView,
-                      new FrameLayout.LayoutParams(
-                          FrameLayout.LayoutParams.MATCH_PARENT,
-                          FrameLayout.LayoutParams.MATCH_PARENT
-                      )
-                  );
-
-                  setContentView(root);
+                  setContentView(webView);
 
                   webView.loadUrl(
                       "file:///android_asset/index.html"
@@ -362,7 +288,6 @@ jobs:
           echo "$ZIP_FILE"
 
           rm -rf website-files
-
           mkdir -p website-files
 
           unzip -o "$ZIP_FILE" -d website-files
@@ -398,7 +323,6 @@ jobs:
 
           if [ -z "$ICON_FILE" ]; then
             echo "ERROR: App icon PNG was not found."
-            echo "Upload your Water Sort Jungle icon PNG to the repository."
             exit 1
           fi
 
@@ -441,11 +365,6 @@ jobs:
               echo "ERROR: index.html was not copied."
               exit 1
           fi
-
-          echo ""
-          echo "GAME FILES INSIDE APK:"
-          find android-wrapper/app/src/main/assets \
-            -type f | sort
 
       - name: Create release signing key
         shell: bash
@@ -502,21 +421,12 @@ jobs:
             android-wrapper/app/build/outputs/apk/release/app-release.apk \
             Water-Sort-Jungle-Release-Signed.apk
 
-          echo ""
-          echo "=========================================="
-          echo "FINAL APK"
-          echo "=========================================="
-
           ls -lh Water-Sort-Jungle-Release-Signed.apk
 
       - name: Verify APK signature
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "VERIFYING SIGNATURE"
-          echo "=========================================="
 
           /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner \
             verify \
