@@ -35,8 +35,6 @@ jobs:
           SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" \
             -type f -name sdkmanager | sort | tail -n 1)
 
-          echo "Using sdkmanager: $SDKMANAGER"
-
           yes | "$SDKMANAGER" --licenses >/dev/null || true
 
           "$SDKMANAGER" \
@@ -67,7 +65,6 @@ jobs:
 
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-
               repositories {
                   google()
                   mavenCentral()
@@ -174,6 +171,9 @@ jobs:
 
                   <item name="android:windowNoTitle">true</item>
 
+                  <!-- Keep content below status bar -->
+                  <item name="android:fitsSystemWindows">true</item>
+
               </style>
 
           </resources>
@@ -185,7 +185,10 @@ jobs:
           import android.app.Activity;
           import android.os.Bundle;
           import android.graphics.Color;
+          import android.graphics.Rect;
+          import android.view.View;
           import android.view.Window;
+          import android.view.WindowInsets;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
@@ -200,17 +203,23 @@ jobs:
 
                   Window window = getWindow();
 
-                  // Keep status bar visible
-                  window.setStatusBarColor(
-                      Color.rgb(26, 90, 46)
-                  );
+                  // Status bar stays visible
+                  window.setStatusBarColor(Color.rgb(26, 90, 46));
 
-                  // Keep navigation bar visible
+                  // Navigation bar stays visible
                   window.setNavigationBarColor(Color.BLACK);
 
                   webView = new WebView(this);
 
                   webView.setBackgroundColor(Color.WHITE);
+
+                  /*
+                   * IMPORTANT:
+                   * Keep WebView inside the safe screen area.
+                   * This prevents the game header/settings from
+                   * moving underneath the phone status bar.
+                   */
+                  webView.setFitsSystemWindows(true);
 
                   WebSettings settings = webView.getSettings();
 
@@ -223,30 +232,59 @@ jobs:
                   settings.setAllowFileAccessFromFileURLs(true);
                   settings.setAllowUniversalAccessFromFileURLs(true);
 
-                  /*
-                   * IMPORTANT:
-                   * Do not allow WebView to zoom the game.
-                   */
+                  // Disable WebView zoom
                   settings.setSupportZoom(false);
                   settings.setBuiltInZoomControls(false);
                   settings.setDisplayZoomControls(false);
 
-                  /*
-                   * Do not shrink the HTML game.
-                   */
+                  // Do not shrink the game
                   settings.setLoadWithOverviewMode(false);
                   settings.setUseWideViewPort(false);
 
-                  /*
-                   * Keep normal HTML text size.
-                   */
                   settings.setTextZoom(100);
-
                   settings.setDefaultTextEncodingName("UTF-8");
 
                   webView.setWebViewClient(new WebViewClient());
 
+                  /*
+                   * Put WebView below the status bar.
+                   */
+                  webView.setSystemUiVisibility(0);
+
                   setContentView(webView);
+
+                  /*
+                   * Extra protection:
+                   * add the actual status-bar height as top padding.
+                   */
+                  webView.setOnApplyWindowInsetsListener(
+                      new View.OnApplyWindowInsetsListener() {
+                          @Override
+                          public WindowInsets onApplyWindowInsets(
+                                  View v,
+                                  WindowInsets insets) {
+
+                              int top = 0;
+                              int bottom = 0;
+
+                              if (android.os.Build.VERSION.SDK_INT >= 23) {
+                                  top = insets.getSystemWindowInsetTop();
+                                  bottom = insets.getSystemWindowInsetBottom();
+                              }
+
+                              v.setPadding(
+                                  0,
+                                  top,
+                                  0,
+                                  bottom
+                              );
+
+                              return insets;
+                          }
+                      }
+                  );
+
+                  webView.requestApplyInsets();
 
                   webView.loadUrl(
                       "file:///android_asset/index.html"
@@ -270,10 +308,6 @@ jobs:
         run: |
           set -e
 
-          echo "=========================================="
-          echo "SEARCHING FOR HTML ZIP"
-          echo "=========================================="
-
           ZIP_FILE=$(find . -maxdepth 3 -type f \
             \( -iname "*.zip" -o -iname "*.ZIP" \) \
             ! -path "./android-wrapper/*" \
@@ -296,10 +330,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "SEARCHING FOR APP ICON"
-          echo "=========================================="
 
           ICON_FILE=""
 
@@ -332,16 +362,10 @@ jobs:
           cp "$ICON_FILE" \
             android-wrapper/app/src/main/res/drawable/app_icon.png
 
-          echo "ICON INSTALLED SUCCESSFULLY."
-
       - name: Copy HTML game into APK
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "PUTTING GAME INSIDE APK"
-          echo "=========================================="
 
           INDEX_FILE=$(find website-files \
             -type f \
@@ -366,14 +390,12 @@ jobs:
               exit 1
           fi
 
+          echo "GAME FILES COPIED INTO APK."
+
       - name: Create release signing key
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "CREATING RELEASE KEY"
-          echo "=========================================="
 
           keytool -genkeypair \
             -v \
@@ -401,10 +423,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "=========================================="
-          echo "BUILDING SIGNED RELEASE APK"
-          echo "=========================================="
 
           cd android-wrapper
 
